@@ -1,0 +1,105 @@
+CREATE OR REPLACE PACKAGE PKG_PARCERIA_DEWAME AS
+		R_CLIENTE	  T_CLIENTE%ROWTYPE;
+		VL_TOT_COMPRA NUMBER(13, 2);
+CREATE OR REPLACE PROCEDURE PRC_LE_ALTERA IS
+/* ---------     Programa que le a tabela do banco DEWAME e altera o limite dos clientes.     -------- */
+	BEGIN
+		FOR REG_DEWAME IN (SELECT *
+		FROM VW_DEWAME_CLIENTE) LOOP
+	END PRC_LE_ALTERA
+	
+CREATE OR REPLACE PROCEDURE PRC_ATRIBUI_REGISTRO IS
+	BEGIN
+/* -------     Lê a tabela cliente e atribui ao registro R_CLIENTE.     ------ */
+		SELECT *
+		INTO R_CLIENTE
+		FROM T_CLIENTE C
+		WHERE C.CPF_CGC = REG_DEWAME.CGC_CPF;
+	END PRC_ATRIBUI_REGISTRO
+	
+CREATE OR REPLACE PROCEDURE PRC_REGRAS_CLIENTES_PF IS
+	BEGIN
+/* ----     Aplica as regras para clientes pessoa física cadastrados.     ----- */
+    IF R_CLIENTE.TIPO_CLI = 'F' THEN
+/* ----------     Calcula o valor das compras no ano de 2014.     ------ */
+			SELECT NVL(SUM(I.QTDE * I.VL_UNITARIO), 0)
+			INTO VL_TOT_COMPRA  
+			FROM T_ITEM_NF I, T_NOTA_FISCAL N    
+			WHERE N.NUM_NF = I.NUM_NF  
+			AND TO_CHAR(N.DATA_NF, 'YYYY') = '2014' 
+			AND N.COD_CLIENTE = R_CLIENTE.COD_CLIENTE; 
+/* -----     Aplica o aumento do limite de compras     -------- */
+        IF VL_TOT_COMPRA BETWEEN 10000 AND 20000 THEN
+			R_CLIENTE.VL_LIMITE_CRED := R_CLIENTE.VL_LIMITE_CRED * 1.3;
+			ELSIF VL_TOT_COMPRA > 20000 THEN
+			R_CLIENTE.VL_LIMITE_CRED := R_CLIENTE.VL_LIMITE_CRED * 1.5;
+		END IF;
+		IF R_CLIENTE.VL_LIMITE_CRED < 5000 THEN
+			R_CLIENTE.VL_LIMITE_CRED := 5000;
+		END IF;
+/* --     Altera o valor do limite do cliente     -------------------------------------- */
+    UPDATE T_CLIENTE
+	SET VL_LIMITE_CRED = R_CLIENTE.VL_LIMITE_CRED
+	WHERE COD_CLIENTE = R_CLIENTE.COD_CLIENTE;
+    END IF;
+	END PRC_REGRAS_CLIENTES_PF
+	
+CREATE OR REPLACE PROCEDURE PRC_REGRAS_CLIENTES_PJ IS	
+/* ---------     Aplica as regras para clientes pessoa jurídicas cadastrados.     ---------- */
+	IF R_CLIENTE.TIPO_CLI = 'J' THEN 
+/* ---------     Calcula o valor das compras no ano de 2014.     --------- */
+             SELECT NVL(SUM(I.QTDE * I.VL_UNITARIO), 0)
+			 INTO VL_TOT_COMPRA
+			 FROM T_ITEM_NF I, T_NOTA_FISCAL N
+			 WHERE N.NUM_NF = I.NUM_NF 
+			 AND TO_CHAR(N.DATA_NF, 'YYYY') = '2014'
+			 AND N.COD_CLIENTE = R_CLIENTE.COD_CLIENTE;
+ /* ---------------------------     Aplica o aumento do limite de compras     --------------------------------------- */
+		IF VL_TOT_COMPRA BETWEEN 10000 AND 20000 THEN
+		R_CLIENTE.VL_LIMITE_CRED := R_CLIENTE.VL_LIMITE_CRED * 1.3;
+		ELSIF VL_TOT_COMPRA > 20000 THEN
+		R_CLIENTE.VL_LIMITE_CRED := R_CLIENTE.VL_LIMITE_CRED * 1.5;
+		END IF;
+		IF R_CLIENTE.VL_LIMITE_CRED < 10000 THEN
+		R_CLIENTE.VL_LIMITE_CRED := 10000;
+		END IF;
+/* ---------     Altera o valor do limite do cliente     ------------------ */
+        UPDATE T_CLIENTE
+		SET VL_LIMITE_CRED = R_CLIENTE.VL_LIMITE_CRED
+		WHERE COD_CLIENTE = R_CLIENTE.COD_CLIENTE;
+	END IF;
+	END PRC_REGRAS_CLIENTES_PJ
+CREATE OR REPLACE PROCEDURE PRC_TRATAMENTO_CLIENTES_NAO_CADASTRADOS IS
+	COMMIT; 
+/* -------------------     Trata clientes não cadastrados na tabela T_CLIENTE     ---------------- */
+            EXCEPTION
+			WHEN NO_DATA_FOUND THEN
+			IF REG_DEWAME.TIPO_CLIENTE = 'F' THEN
+			INSERT INTO T_CLIENTE (COD_CLIENTE,
+			NOME_CLIENTE ,
+			VL_LIMITE_CRED,
+			TIPO_CLI,
+			CPF_CGC)
+			VALUES 
+			(SQ_CLIENTE.NEXTVAL,
+			REG_DEWAME.NOME,
+			5000,
+			REG_DEWAME.TIPO_CLIENTE,
+			REG_DEWAME.CGC_CPF);
+			ELSE
+			INSERT INTO T_CLIENTE (COD_CLIENTE,
+			NOME_CLIENTE ,
+			VL_LIMITE_CRED,
+			TIPO_CLI,
+			CPF_CGC)
+			VALUES
+			(SQ_CLIENTE.NEXTVAL,
+			REG_DEWAME.NOME, 
+			10000, 
+    REG_DEWAME.TIPO_CLIENTE,
+	REG_DEWAME.CGC_CPF);
+	END IF;
+	END PRC_TRATAMENTO_CLIENTES_NAO_CADASTRADOS;
+	END LOOP;
+	COMMIT;
+	END PKG_PARCERIA_DEWAME;
